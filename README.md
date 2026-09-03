@@ -49,17 +49,24 @@ editing — don't work from memory.**
 | `/three-term-port` | Full port — orient, scope, work all modules in order |
 | `/three-term-port <module>` | Jump to one module (number, P-number, or alias) |
 | `/three-term-port help` | Print the quick reference and stop |
+| `/three-term-port audit` | Code-presence audit across all modules |
+| `/three-term-port audit <module>` | Audit one module: implemented? + needs update? |
 | `/three-term-port changelog` | Show changes across all modules |
 | `/three-term-port changelog <module>` | Changelog for one module |
 | `/three-term-port changelog audit` | Check every changelog entry's identifiers against this repo |
 
 Examples: `/three-term-port 3`, `/three-term-port P9`, `/three-term-port "final grades"`,
-`/three-term-port SF10`.
+`/three-term-port SF10`, `/three-term-port audit 07`.
 
 Read-only audit of what's already implemented:
 
 ```bash
+# All modules
 bash .claude/skills/three-term-port/scripts/audit.sh
+
+# One module — code-presence detectors for just that module, plus a
+# "Needs update?" section (its changelog entries checked against this repo)
+bash .claude/skills/three-term-port/scripts/audit.sh 07
 ```
 
 ---

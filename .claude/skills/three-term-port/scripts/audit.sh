@@ -6,36 +6,88 @@
 # whereConfigActive (invariant #1). This NEVER edits anything.
 #
 # Usage (from the target repo root):
-#   bash .claude/skills/three-term-port/scripts/audit.sh
-#   bash .claude/skills/three-term-port/scripts/audit.sh /path/to/repo
+#   bash .claude/skills/three-term-port/scripts/audit.sh                  # all modules
+#   bash .claude/skills/three-term-port/scripts/audit.sh /path/to/repo    # all modules, another repo
+#   bash .claude/skills/three-term-port/scripts/audit.sh 07               # one module: implemented? + needs update?
+#   bash .claude/skills/three-term-port/scripts/audit.sh 07 /path/to/repo # one module, another repo
+#
+# A module argument (01-11, P1-P12, with or without a leading zero, P
+# case-insensitive) narrows the "Modules:" section to that module's own
+# detectors AND appends a "Needs update?" section that shells out to
+# changelog-audit.sh for that module — so one command answers both "is this
+# module here at all" and "is it missing a later fix/feature on top of the
+# base port". See changelog-audit.sh for that section's own heuristic caveats
+# (identifier presence, not behavior).
 #
 # Note: this checks CODE only. The schema (Module 01) lives in the database and
 # must be verified separately (e.g. via the migration page's "Check Status").
 
 set -u
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+norm_module() { # normalize "7" / "07" / "p2" / "P2" -> "7" / "P2"
+  echo "$1" | sed 's/^0*//' | sed 's/^[pP]/P/'
+}
+
+is_module_arg() {
+  [[ "$1" =~ ^[0-9]{1,2}$ ]] || [[ "$1" =~ ^[pP][0-9]{1,2}$ ]]
+}
+
+MODULE=""
+MODULE_DISPLAY=""
+if [ $# -gt 0 ] && is_module_arg "$1"; then
+  MODULE="$(norm_module "$1")"
+  # zero-pad numeric modules back to the kit's own "07" style; P-modules (P2,
+  # P12) already display fine unpadded.
+  if [[ "$MODULE" =~ ^[0-9]+$ ]]; then
+    MODULE_DISPLAY=$(printf '%02d' "$MODULE")
+  else
+    MODULE_DISPLAY="$MODULE"
+  fi
+  shift
+fi
 ROOT="${1:-.}"
 cd "$ROOT" 2>/dev/null || { echo "cannot cd to $ROOT"; exit 1; }
 
 say() { printf '%s\n' "$*"; }
 
+MODULE_CHECKS_PRINTED=0
+
 check() { # label, pattern, path
-  if grep -rqIs -- "$2" $3 2>/dev/null; then
-    say "  [x] $1"
+  local label="$1" pat="$2" path="$3"
+  local modtag
+  modtag="$(norm_module "${label%% *}")"
+  if [ -n "$MODULE" ] && [ "$modtag" != "$MODULE" ]; then
+    return
+  fi
+  MODULE_CHECKS_PRINTED=$((MODULE_CHECKS_PRINTED + 1))
+  if grep -rqIs -- "$pat" $path 2>/dev/null; then
+    say "  [x] $label"
   else
-    say "  [ ] $1"
+    say "  [ ] $label"
   fi
 }
 
 checkfile() { # label, filename-glob
-  if find . -type f -name "$2" 2>/dev/null | grep -q .; then
-    say "  [x] $1"
+  local label="$1" glob="$2"
+  local modtag
+  modtag="$(norm_module "${label%% *}")"
+  if [ -n "$MODULE" ] && [ "$modtag" != "$MODULE" ]; then
+    return
+  fi
+  MODULE_CHECKS_PRINTED=$((MODULE_CHECKS_PRINTED + 1))
+  if find . -type f -name "$glob" 2>/dev/null | grep -q .; then
+    say "  [x] $label"
   else
-    say "  [ ] $1"
+    say "  [ ] $label"
   fi
 }
 
 say "== 3-term port audit =="
 say "repo: $(pwd)"
+if [ -n "$MODULE" ]; then
+  say "module: $MODULE_DISPLAY"
+fi
 say "(code presence only — schema/DB verified separately via the migration page)"
 say ""
 say "Modules:"
@@ -57,7 +109,21 @@ check "10 SF9 terms  (resolveShsSf9Terms)"                  "resolveShsSf9Terms"
 check "P1 Sec-info read guard (get_schedule_2)"            "shsHasTermPlotting(\$syid, \$levelid->levelid)" "app"
 check "P1 Sec-info write norm (semidMatch)"                "\$semidMatch = function"              "app"
 check "P1 Sec-info dropdown (SEC_TERM_MAP)"                "SEC_TERM_MAP"                          "resources"
+if [ -n "$MODULE" ] && [ "$MODULE_CHECKS_PRINTED" -eq 0 ]; then
+  say "  (no code-presence detector defined for module $MODULE_DISPLAY yet in this script —"
+  say "   see the \"Needs update?\" section below instead, or add one here.)"
+fi
 say ""
+
+if [ -n "$MODULE" ]; then
+  say "Needs update? (module $MODULE_DISPLAY changelog entries vs. this repo, heuristic):"
+  if [ -x "$SCRIPT_DIR/changelog-audit.sh" ] || [ -f "$SCRIPT_DIR/changelog-audit.sh" ]; then
+    bash "$SCRIPT_DIR/changelog-audit.sh" "$MODULE" 2>&1 | sed 's/^/  /'
+  else
+    say "  changelog-audit.sh not found next to audit.sh — skipping."
+  fi
+  say ""
+fi
 
 say "Invariant #1 — ibed_term_config reads and their guard:"
 files=$(grep -rlIs -- "table('ibed_term_config'" app resources 2>/dev/null | grep -v "ibed_term_config_gradelevel" || true)

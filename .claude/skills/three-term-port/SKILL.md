@@ -31,6 +31,8 @@ portal. Read the relevant kit file before editing — don't work from memory.
 | *(none)* | **Full port** — orient, scope, work modules in order |
 | `<module>` | **Single module** — jump to that module (number, P-number, or alias) |
 | `help` | **Help** — print usage reference and stop |
+| `audit` | **Audit** — run the code-presence audit across all modules |
+| `audit <module>` | **Audit (single)** — implemented? + needs update? for one module |
 | `changelog` | **Changelog** — run the changelog script and show all module changes |
 | `changelog <module>` | **Changelog (single)** — show changes for one module only |
 | `changelog audit` | **Changelog audit** — check every changelog entry's identifiers against this repo |
@@ -48,6 +50,7 @@ module work:
 USAGE
   /three-term-port              Full port — orient, scope, then work modules in order
   /three-term-port <module>     Jump to a single module (number, P-number, or alias)
+  /three-term-port audit [mod]  Code-presence audit — all modules, or one
   /three-term-port help         Show this help
 
 MODULES (core — work in order)
@@ -75,7 +78,8 @@ ALIASES (use in place of a module number)
   "SF10" / "permanent record" / "form 137" → 11
 
 AUDIT (read-only, shows what's already implemented)
-  bash .claude/skills/three-term-port/scripts/audit.sh
+  /three-term-port audit              All modules
+  /three-term-port audit 07           One module: implemented? + needs update?
 
 CHANGELOG (shows all changes across modules)
   /three-term-port changelog          All modules
@@ -92,6 +96,36 @@ KIT DOCS
 COMPANION SKILLS
   /create-kit-module <id> <title>    Create a new kit module file
 ~~~
+
+## Audit command
+
+When the argument is `audit` (with or without a module id after it — number,
+P-number, or the same aliases "Targeting a single module" accepts), run the
+audit script and print its output verbatim:
+
+```bash
+# All modules
+bash .claude/skills/three-term-port/scripts/audit.sh
+
+# Single module (accepts "7", "07", "p2", "P2", ...)
+bash .claude/skills/three-term-port/scripts/audit.sh 07
+```
+
+Map an alias/short form to the same module id "Targeting a single module"
+uses before passing it to the script (e.g. "subject plot" → `P2`, "7" → `07`).
+
+With no module id, it reports code-presence for every module this script has
+a detector for (not all modules have one yet) plus the two `ibed_term_config`
+guard invariants, repo-wide. With a module id, it narrows to that module's
+detectors and appends a "Needs update?" section (the module's changelog
+entries checked against this repo — same heuristic as `changelog audit`,
+with the same caveats: identifier presence, not behavior; common tokens can
+false-positive as "found"; each repo's kit copy can be out of sync with
+another's).
+
+Read-only — never edits anything. Then stop — do not start any module work
+(an audit finding is grounds to offer applying or fixing something, not to
+silently start doing so).
 
 ## Changelog command
 
@@ -192,7 +226,13 @@ offer applying or fixing an entry, not to silently start doing so).
    (read-only). It reports which modules already look implemented and flags any
    `ibed_term_config` read missing the `activeConfigQuery` guard. Use it to see
    current state / resume a partial port / start debugging. (It checks code only;
-   schema is a DB check — use the migration page's "Check Status".)
+   schema is a DB check — use the migration page's "Check Status".) Pass a module
+   id (`bash .claude/skills/three-term-port/scripts/audit.sh 07`) to narrow the
+   "Modules:" section to just that module's own detectors **and** get a "Needs
+   update?" section appended — it shells out to `changelog-audit.sh` for that
+   module, so one command answers both "is this here at all" and "is it missing
+   a later fix on top of the base port" (same identifier-presence heuristic and
+   caveats as `changelog audit`).
 2. Read `docs/three-term-port-kit/README.md` — the module roadmap (01–10) and how
    the kit is used.
 3. Establish scope before touching code (ask the user if unclear):
