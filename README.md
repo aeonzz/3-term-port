@@ -19,10 +19,14 @@ editing — don't work from memory.**
 1. **Copy the kit into the target repo** — from this repo's root, run:
 
    ```powershell
-   .\deploy-kit.ps1 <laragon-project-name>
+   .\deploy-kit.ps1 <laragon-project-name>      # PowerShell
    ```
 
-   e.g. `.\deploy-kit.ps1 es_apmc`. This copies:
+   ```bash
+   ./deploy-kit.sh <laragon-project-name>       # Git Bash / WSL
+   ```
+
+   e.g. `es_apmc`. This copies:
 
    | From (this repo) | To (`C:\laragon\www\<project>\`) |
    |------------------|----------------------------------|
@@ -30,9 +34,25 @@ editing — don't work from memory.**
    | `.claude/skills/three-term-port/` | `.claude/skills/three-term-port/` |
 
    It prompts before overwriting any existing file (`a` = overwrite all).
-   Flags: `-Force` (no prompts), `-SkipExisting` (keep target copies),
-   `-Dest <full-path>` (non-Laragon target), `-WwwPath <path>` (custom www root).
+   Identical files are skipped; other skills in `.claude/skills/` are untouched.
    Run with no arguments to list available Laragon projects.
+
+   | | PowerShell | Bash |
+   |--|--|--|
+   | No prompts | `-Force` | `--force` |
+   | Keep target copies | `-SkipExisting` | `--skip-existing` |
+   | Non-Laragon target | `-Dest <path>` | `--dest <path>` |
+   | Custom www root | `-WwwPath <path>` | `--www <path>` |
+
+   If Laragon is installed on another drive, point at its `www`:
+
+   ```powershell
+   .\deploy-kit.ps1 es_apmc -WwwPath D:\laragon\www
+   ```
+
+   ```bash
+   ./deploy-kit.sh es_apmc --www D:/laragon/www
+   ```
 
 2. **Confirm the target is a CK school ERP** — same Laravel base with tables
    `sy`, `gradelevel`, `subject_plot`, `sh_classsched`, `grades`, `gradesdetail`,
