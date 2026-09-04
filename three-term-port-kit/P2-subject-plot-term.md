@@ -106,6 +106,10 @@ Only whole-year-plot a level whose config is a genuine term restructuring.
 - No way to plot a subject to a **subset** of terms (e.g. 1T + 3T) — `termid` holds
   only one term.
 - After converting, no way to revert a mistaken conversion.
+- Switching the **Term** dropdown (Whole year / 1T / 2T / 3T) on the Subject Plot
+  table has no visible effect — a semester-stamped straggler appears identically
+  under every term choice, because `list()` was never taught to filter on `termid`/
+  `term_mode` (Change 7).
 
 ## Reference implementation
 
@@ -143,6 +147,8 @@ Only whole-year-plot a level whose config is a genuine term restructuring.
 | 6 | `subjectplot.blade.php` | banner + Convert / Convert-to-Terms / revert controls | Add the banner UI |
 | 6b | `subjectplot.blade.php` | **plot-form Term filter** (`SHS_TERM_CFG`, `#filter_term`) | Swap Semester→Term dropdown for term-configured levels (Change 4b) |
 | 7 | `SHSClusterPlottingController.php` | `termConversionPreview/Convert` | Add (cluster variant) |
+| 8 | `SubjectPlotController.php` | `list`, `list_ajax` | Add `$termid`/`$termMode` params + filtering (Change 7) — **not just Change 4b's create-time picker** |
+| 8b | `subjectplot.blade.php` | `subjectplot_list()` | Send `termid`/`term_mode` so the displayed table actually respects the Term dropdown (Change 7) |
 
 ---
 
@@ -178,6 +184,10 @@ grep -n "plot/convert-wholeyear\|plot/convert-terms\|plot/termstatus" routes/web
 
 # --- banner UI in the blade: ---
 grep -n "convert-wholeyear\|termstatus\|Convert all to Whole Year" "$V"
+
+# --- list() term-aware filtering (Change 7 — APPLIED if BOTH print): ---
+grep -n '\$termMode = 0' "$SP"                          # list() signature param
+grep -n "term_mode:" "$V"                                # subjectplot_list() payload
 ```
 
 **Decision rule:** each symbol that prints is already applied → skip it. If
@@ -516,6 +526,105 @@ semesterPlots+semesterScheds > 0`, render the warning bar:
 
 Copy the bar + handlers from the reference blade; adapt layout/toast helpers.
 
+## Change 7 — `list()` term-aware filtering (the displayed table, not just the create form)
+
+**This is easy to miss because it was never captured here until 2026-09-03 — see the
+Changelog.** Change 4b makes the plot **form** term-aware (you can plot directly to a
+term when creating a subject), but on its own that's cosmetic for the **displayed
+table**: without this change, switching the Term dropdown (`#filter_term`) between
+"Whole year" / 1T / 2T / 3T does **nothing** — the table keeps showing every plot for
+the level regardless of `semid`, including legacy semester-stamped stragglers (e.g. a
+non-core subject plotted while the config was still inactive). That's misleading: a
+subject sitting at a real `semid` can appear to "already be whole-year" simply because
+nothing is filtering it out.
+
+**Root cause:** `subjectplot_list()` (the AJAX call that populates the table) only
+ever sends `semid: $('#filter_semester').val()` — and `#filter_semester` is hidden and
+forced to `""` in term mode (see Change 4b step 2). In PHP, `'' != null` is `false`, so
+`SubjectPlotController::list()`'s existing `if ($semid != null) { ... }` guard is
+skipped entirely whenever term mode is on — no filter is applied at all, term or
+otherwise. `termid`/`term_mode` are never sent because `list()` doesn't accept them.
+
+**Fix — `list()` gains two params and filters on them** (signature order matters; the
+two new params are the last positional ones so existing callers stay unaffected if
+they don't pass them):
+
+```php
+public static function list(
+    $id = null, $subjid = null, $levelid = null, $sort = null, $syid = null,
+    $semid = null, $strandid = null, $subjlist = array(), $issp = false,
+    $acadprog = null, $termid = null, $termMode = 0
+) {
+    $termid = ($termid === '' || $termid === null) ? null : $termid;
+    $termMode = (int) $termMode === 1;
+    // ...existing $subjectplot query builder...
+
+    if ($termMode && ($levelid == 14 || $levelid == 15 || $acadprog == 5)) {
+        $subjectplot = $subjectplot->whereNull('subject_plot.semid');
+    }
+    if ($termid != null && ($levelid == 14 || $levelid == 15 || $acadprog == 5)) {
+        // A multi-term subject (subject_plot_term rows) carries termid NULL, same as a
+        // genuinely whole-year plot, so a plain "termid IS NULL" test would match it in
+        // EVERY term. Mirrors resolvePlotTermNos()'s precedence.
+        $hasTermTable = \App\Support\IBEDGradingDefaults::hasPlotTermTable();
+
+        $subjectplot = $subjectplot->where(function ($q) use ($termid, $hasTermTable) {
+            $q->where('subject_plot.termid', $termid); // pinned to this term
+
+            if ($hasTermTable) {
+                $q->orWhereExists(function ($sub) use ($termid) {
+                    $sub->select(DB::raw(1))->from('subject_plot_term')
+                        ->whereColumn('subject_plot_term.plot_id', 'subject_plot.id')
+                        ->where('subject_plot_term.term_id', $termid)
+                        ->where('subject_plot_term.deleted', 0);
+                }); // listed for this term in the multi-term mapping
+                $q->orWhere(function ($q2) {
+                    $q2->whereNull('subject_plot.termid')
+                        ->whereNotExists(function ($sub) {
+                            $sub->select(DB::raw(1))->from('subject_plot_term')
+                                ->whereColumn('subject_plot_term.plot_id', 'subject_plot.id')
+                                ->where('subject_plot_term.deleted', 0);
+                        });
+                }); // genuinely whole-year: no pin and no mapping at all
+            } else {
+                $q->orWhereNull('subject_plot.termid');
+            }
+        });
+    }
+    // ...rest of list() unchanged...
+}
+```
+
+`list_ajax()` must forward the two new request params in the same order:
+
+```php
+$termid = $request->get('termid');
+$termMode = $request->get('term_mode');
+// ...
+return self::list($id, $subjid, $levelid, $sort, $syid, $semid, $strandid, array(), $issp, $acadprog, $termid, $termMode);
+```
+
+And `subjectplot_list()` (the blade JS) must send both, plus `term_mode` computed the
+same way the reveal logic in Change 4b does:
+
+```javascript
+data: {
+    syid: $('#filter_sy').val(),
+    levelid: $('#filter_gradelevel').val(),
+    semid: $('#filter_semester').val(),
+    termid: $('#filter_term').val(),
+    term_mode: $('#term_filter_wrapper').is(':hidden') ? 0 : 1,
+    strandid: $('#filter_strand').val(),
+    issp: true
+},
+```
+
+> ⚠️ `list()` is also called internally by `create()`/`update()`/`copy_to()` to return
+> the refreshed table after a save — those call sites don't need to pass the new
+> params (they default to `null`/`0`, i.e. no term filtering), matching pre-change
+> behavior. Only `list_ajax()` (driven by the visible Term dropdown) needs to forward
+> them.
+
 ## Grading-setup link (drives Module 07)
 
 `subject_plot.gradessetup` → `subject_gradessetup` (`components_json`) is what makes
@@ -545,6 +654,11 @@ non-empty `components_json` (in `component_scores` mode) is what flips
    Confirm no stranded semester grades first (`gradeCount` surfaces this; see
    `THREE_TERM_CONVERSION_GUIDE.md §5b`).
 9. **`create_logs` / `deleteddatettime`** are reference-specific — adapt.
+
+10b. **Change 4b (create-form term picker) is not Change 7 (list filtering).** Porting
+    only Change 4b leaves the displayed subject table unfiltered by term — it looks
+    like nothing is wrong (the form works, plots save correctly) until a semester-
+    stamped row shows up under every Term choice indiscriminately. Port both.
 
 10. **Wrap every `ibed_term_config` read with `activeConfigQuery()`.** The
     `shsConfiguredTerms()` resolver already goes through `activeConfigQuery`
@@ -579,5 +693,71 @@ non-empty `components_json` (in `component_scores` mode) is what flips
    **Term-Based** on `/classschedule` and shows term columns in Final Grading.
 7. **Revert** restores the semesters, clears `prev_semid`, and the subset no longer
    applies.
+8. **Change 7 — list filtering.** With one plot still semester-stamped (`semid` set)
+   and the rest whole-year, select the level and switch **Term** to "Whole year" →
+   the semester-stamped plot must **not** appear. Switch to a specific term (e.g. 1T)
+   → only plots whole-year, pinned to that term, or in a `subject_plot_term` subset
+   including it should appear. `curl` the endpoint directly to confirm:
+   `…/plot/list?syid=&levelid=14&termid=&term_mode=1` (whole year) vs
+   `…/plot/list?syid=&levelid=14&termid=<id>&term_mode=1` (one term) should return
+   different subject sets whenever a semester straggler or single-term pin exists.
 
 With SHS levels term-plotted, proceed to **Module 07 — Teacher ECR**.
+
+---
+
+## Changelog
+
+### 2026-09-03 — Missing `Schema` facade import broke the whole-year status banner
+
+`SubjectPlotController.php` never imported `Illuminate\Support\Facades\Schema`. Since
+the controller lives in the `App\Http\Controllers\SuperAdminController` namespace,
+every bare `Schema::hasColumn(...)` call (5 call sites: `bulkTermStatus`,
+`bulkConvertToWholeYear`, `bulkRevertToSemester`, `revertPlotToSemester`) resolved to
+the non-existent `App\Http\Controllers\SuperAdminController\Schema` and threw a fatal
+"class not found" error — a 500 on every `…/plot/termstatus` request. The status
+banner (Change 6) and its Convert/Revert actions were silently non-functional; the
+port looked complete (every symbol a PREFLIGHT grep checks for was present) but
+nothing in this module actually ran. es_ldcu's copy of this file has always had the
+import; this was a port-time omission, not a source-repo bug.
+
+**Fix:** add `use Illuminate\Support\Facades\Schema;` to the file's `use` block.
+
+**Lesson for future ports:** a PREFLIGHT/audit grep that checks "does the function
+exist" cannot catch a missing import — that only fails at runtime. Actually call the
+endpoint (or load the page) before marking this module verified; `php -l` doesn't
+catch it either (it's a valid-syntax fatal, not a parse error).
+
+**Files touched:**
+
+| File | Change |
+|------|--------|
+| `SubjectPlotController.php` | Added `use Illuminate\Support\Facades\Schema;` to the `use` block |
+
+### 2026-09-03 — `list()` never learned to filter by term (Change 7, new)
+
+Change 4b (the create-form Term picker) was documented and ported, but the
+**displayed subject table** was never made term-aware — that gap wasn't written up
+anywhere in this module, in either this repo's or es_ldcu's copy of this doc, even
+though es_ldcu's actual codebase has had the fix since commit `cffc9d020` ("feat: shs
+three-term grading, plotting, and promotion flow", 2026-07-24). Switching the Term
+dropdown had no effect on the table: `subjectplot_list()` only ever sent
+`semid: $('#filter_semester').val()`, which is forced to `""` in term mode, and PHP's
+`'' != null` is `false` — so `SubjectPlotController::list()`'s semid filter silently
+no-opped, returning every plot for the level regardless of its real `semid`. A
+semester-stamped straggler (e.g. a non-core subject plotted while the level's term
+config was momentarily inactive) would appear identically under "Whole year" and every
+term, looking indistinguishable from a genuinely whole-year plot.
+
+**Fix:** added `$termid`/`$termMode` params to `list()` with the filtering logic
+ported from es_ldcu (term mode → `whereNull('semid')`; a specific term → pinned
+`termid` match, `subject_plot_term` subset match, or genuinely-whole-year fallback),
+forwarded them through `list_ajax()`, and updated `subjectplot_list()` to send
+`termid`/`term_mode`. See **Change 7** above for the full diff.
+
+**Files touched:**
+
+| File | Change |
+|------|--------|
+| `SubjectPlotController.php` | `list()` gained `$termid`/`$termMode` params + filtering; `list_ajax()` forwards `termid`/`term_mode` |
+| `subjectplot.blade.php` | `subjectplot_list()` now sends `termid: $('#filter_term').val()` and `term_mode: $('#term_filter_wrapper').is(':hidden') ? 0 : 1` |

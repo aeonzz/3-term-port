@@ -203,3 +203,39 @@ No UI — verify by exercising the API and by watching downstream modules resolv
 
 Once resolution is proven, proceed to **Module P2 — Subject Plot term / whole-year
 plotting**, which supplies the SHS plotting gate this module reads.
+
+## Changelog
+
+### 2026-09-04 — Trim sub-component codes to stop orphaned ECR scores (2a5255722)
+
+A teacher entered and saved an HPS + score for a "ST2" sub-component on the
+dynamic IBED ECR, but after a page refresh the value showed blank even though
+it was present in `ibed_ecr_item_grade`. Root cause: the affected
+`subject_gradessetup.components_json` had that sub-component's `short_code`
+stored as `"ST2 "` (trailing space) instead of `"ST2"`. The ECR keys every
+score/HPS lookup as `"{component_short_code}|{sub_component_short_code}|{item_index}"`,
+so the dirty code produced a different lookup key (`QA|ST2 |1`) than the one
+the score was actually saved under (`QA|ST2|1`) — the data was never lost, it
+just became unreachable the moment the setup was re-saved with the stray
+space.
+
+**Files touched:**
+
+| File | Change |
+|------|--------|
+| `app/Support/IBEDGradingDefaults.php` | Added `trimSubComponentCodes()` and call it from all three branches of `normalizeComponents()` (`sub_components` mode, `items` mode, and the legacy fold-and-merge path) before returning each component. |
+
+**What it does** — `trimSubComponentCodes()` runs `trim()` on every
+sub-component's `short_code` and `name` every time `componentsFromSetup()` /
+`normalizeComponents()` decodes a setup's `components_json`. This is a
+read-time fix: it doesn't touch what's stored in the DB, it just guarantees
+that whatever gets decoded back out — and therefore whatever key gets built
+for score/HPS lookups — is whitespace-clean, regardless of how the JSON was
+originally written (typed through the setup UI, seeded, imported, or edited
+directly). It's idempotent and safe to run on already-clean data.
+
+**Porting note:** copy this change into `IBEDGradingDefaults.php` verbatim —
+it's a pure defensive fix with no schema or route impact. Pair it with the
+Module 03 changelog entry below (trim-on-save in the setup form JS) so new
+setups don't reintroduce dirty codes; this read-side trim is what actually
+fixes already-broken data without requiring anyone to re-save the setup.

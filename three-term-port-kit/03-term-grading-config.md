@@ -10,8 +10,7 @@ Everything downstream reads what this screen writes into `ibed_term_config` +
 - **Screen:** `/setup/ibed-term-config`
 - **Controller:** `SuperAdminController\IbedTermConfigController`
 
-> ### Why this module is "copy the file," not "paste from this doc"
-> The controller is ~1,140 lines and the view ~1,090. Hand-transcribing them into
+> ### Why this module is "copy the file," not "paste from this docibing them into
 > this guide would introduce errors and help nobody. Per the kit's premise
 > ([`README.md`](README.md)), **copy the two reference files verbatim** from
 > es_ldcu, then use the contract + adaptation notes below to wire and adjust them.
@@ -110,7 +109,7 @@ All endpoints return JSON `{ status, message?, data? }`. `status`: `1` = ok,
 | `save()` | POST `…/save` | Create or update a config + its terms + level junction. Heavy validation; two-step confirmation (see below). |
 | `deleteConfig()` | POST `…/delete` | Soft-delete a config (guarded against configs already in use). |
 | `getGradeComponents()` / `getGradeComponent($id)` | GET `…/components` | Component-setup library (`subject_gradessetup`) for the modal's WW/PT/QA/component picker; `parseComponents()` normalizes `components_json`/legacy columns. |
-| `createGradeComponent()` / `updateGradeComponent()` / `deleteGradeComponent()` | POST `…/component/*` | CRUD for the component library. |
+| `createGradeComponent()` / `updateGradeComponent()` / `deleteGradeComponent()` | POST `…/component/*` | CRUD for/ the component library. |
 | `equivalenceOptions()` | GET `…/equivalence-options` | Refreshes the Grade Point Equivalence picker after the Grade Equivalency tab (Module 04) edits rows. |
 
 ---
@@ -236,3 +235,34 @@ The config modal POSTs to `…/save`:
 Once configs save and validate correctly, proceed to **Module 04 — Grade
 Equivalency / transmutation tables** (the `grade_point_equivalence_id` /
 `score_conversion_id` this screen references).
+
+## Changelog
+
+### 2026-09-04 — Trim component/sub-component name & code on save (2a5255722)
+
+Companion fix to the Module 05 entry of the same date: a sub-component code
+typed with a stray leading/trailing space (e.g. `"ST2 "`) got saved verbatim
+into `components_json`, silently orphaning any ECR scores/HPS saved under the
+clean key once the setup was re-saved. Module 05's fix trims on **read** (and
+is what actually recovers already-broken data); this change trims on **save**
+so the setup form stops writing dirty codes into new/edited configs in the
+first place.
+
+**Files touched:**
+
+| File | Change |
+|------|--------|
+| `resources/views/superadmin/pages/setup/ibed-term-config/partials/_grade_components_scripts.blade.php` | `getCompItems()` now wraps the component name/code and every sub-component's name/code in `.trim()` before pushing into the JSON payload sent to `updateGradeComponent`. |
+| `resources/views/registrarv2/pages/setup/ibed/tabs/grade-components-tab.blade.php` | Same `.trim()` fix applied to this repo's separate registrar-portal copy of the Grade Components tab, which builds and serializes the identical JSON shape independently. |
+
+**What it does** — purely a JS-side input-sanitization change: `.val()` reads
+for `comp-item-name`, `comp-item-code`, `sub-item-name`, and `sub-item-code`
+are now wrapped as `($el.val() || '').trim()`. No change to validation rules,
+percentages, or the save endpoint's request shape.
+
+**Porting note:** this repo has **two independent implementations** of the
+Grade Components setup screen — the superadmin one this module documents, and
+a registrar-portal copy at `resources/views/registrarv2/pages/setup/ibed/tabs/grade-components-tab.blade.php`
+that isn't otherwise covered by this kit module. If your target repo also has
+a registrar-side copy of this screen, apply the same `.trim()` fix there too;
+otherwise it becomes the next place a dirty code can sneak back in.
