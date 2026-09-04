@@ -16,9 +16,23 @@ editing — don't work from memory.**
 
 ## Quick start
 
-1. **Copy the kit into the target repo:**
-   copy `three-term-port-kit/` into the target project's `docs/` folder
-   (so it lives at `docs/three-term-port-kit/`).
+1. **Copy the kit into the target repo** — from this repo's root, run:
+
+   ```powershell
+   .\deploy-kit.ps1 <laragon-project-name>
+   ```
+
+   e.g. `.\deploy-kit.ps1 es_apmc`. This copies:
+
+   | From (this repo) | To (`C:\laragon\www\<project>\`) |
+   |------------------|----------------------------------|
+   | `three-term-port-kit/` | `docs/three-term-port-kit/` |
+   | `.claude/skills/three-term-port/` | `.claude/skills/three-term-port/` |
+
+   It prompts before overwriting any existing file (`a` = overwrite all).
+   Flags: `-Force` (no prompts), `-SkipExisting` (keep target copies),
+   `-Dest <full-path>` (non-Laragon target), `-WwwPath <path>` (custom www root).
+   Run with no arguments to list available Laragon projects.
 
 2. **Confirm the target is a CK school ERP** — same Laravel base with tables
    `sy`, `gradelevel`, `subject_plot`, `sh_classsched`, `grades`, `gradesdetail`,
