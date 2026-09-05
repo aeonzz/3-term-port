@@ -406,6 +406,72 @@ grading), then **Module 09 — Final grading & master sheets**.
 
 ## Changelog
 
+### 2026-09-05 — Dynamic ECR signatories (`7ed9f0046`)
+
+The dynamic (component) ECR had no signatory block at all — the static ECR
+(`TeacherECRv2Controller`) prints a "Prepared by / Checked by / Approved by"
+footer on every sheet, but `IBEDECRController`'s Excel output stopped at the
+last student row. Added the two signatures that are backed by real data
+(skipped "Checked by" — in the static ECR that one is two literal names
+hardcoded in PHP branching on `acadprogid`, not sourced from any table, so
+there's nothing meaningful to port).
+
+**Files touched:**
+
+| File | Change |
+|------|--------|
+| `app/Http/Controllers/SuperAdminController/IBEDECRController.php` | `download()`: new `signatory` table lookup; `$sheetContext['principal']` added; `buildIbedEcrTermSheet()` and `buildSummarySheet()` both write a footer signature block; `buildSummarySheet()` gained a trailing `$principal = null` parameter. |
+
+**What it does** — `download()` now queries `signatory` (`form = 'report_card'`,
+scoped by `syid` + `levelinfo->acadprogid`, `deleted = 0`) — the exact same
+table and scoping `TeacherECRv2Controller`'s static "Approved by" block already
+reads, so both ECR formats reflect whatever the school configured there. The
+teacher is the same `$teacher` record already resolved earlier in `download()`
+(via `assignsubj`/`assignsubjdetail`, falling back to `sh_classsched` for SHS)
+and already used for the header's "TEACHER:" field — no new teacher lookup.
+
+Both `buildIbedEcrTermSheet()` (runs once per active term/quarter sheet) and
+`buildSummarySheet()` append the same block 3 rows below the last data row:
+
+- **Prepared by:** (left, columns B:F) — teacher name in
+  `TITLE FIRSTNAME LASTNAME` form, uppercased, bold with a bottom border
+  (signature-line style); "Subject Teacher" printed below it.
+- **Approved by:** (right, last 6 columns — `max(8, lastCol-5)` through
+  `lastCol`/`lastDataCol`) — principal name from `signatory.name`, uppercased,
+  same bold+underline styling; `signatory.title` below it (falls back to the
+  literal string `"Principal"` when no `signatory` row exists for that
+  `syid`/`acadprogid`).
+
+Cells are left at the sheet's default locked/read-only state (this block sits
+after the existing `$protection->setSheet(true)` call in the term-sheet writer)
+— nothing here is meant to be hand-typed by the teacher, unlike the score cells.
+
+**Porting note:** requires a `signatory` table with at least `form`, `syid`,
+`acadprogid`, `deleted`, `name`, `title` columns — the same table Module 07's
+static ECR path already depends on for its own "Approved by" block, so a repo
+that has already ported the static ECR needs no new schema for this. If the
+target repo's static ECR signatory table has a different name/shape, adjust
+the `download()` query to match. No route or migration changes.
+
+### 2026-09-05 — Fix DESCRIPTOR column overflowing its sticky boundary
+
+`ibed_gradeview.blade.php`'s sticky output-column rail (TERM GRADE / Letter /
+DESCRIPTOR, right of IG) gave every column the same hardcoded `95px` width and
+computed each one's `right:` offset as `(count - 1 - index) * 95`. That's fine
+for TERM GRADE (2-3 chars) or Letter (1 char), but DESCRIPTOR holds a full grade
+remark — e.g. `Benchmarking (Napamamalas)`, `Developing (Napauunlad)` — 20+
+characters that overflowed past a 95px cell under the sheet's blanket
+`white-space: nowrap`, bleeding visually past its own sticky boundary instead of
+looking like a normal column.
+
+Fixed by computing per-column widths (`description` gets 190px, everything else
+keeps 95px) and deriving each column's `right:` offset from the real
+accumulated width instead of assuming uniformity; the description cell also
+gets `white-space: normal` so a remark that still doesn't fit wraps inside its
+column instead of spilling out. All three render sites (header row, HPS row,
+per-student body row) use the same `$ocWidths`/`$ocRights` arrays computed once
+near the top of the partial.
+
 ### 2026-09-03 — Fix term grade double-transmutation and equivalence gating
 
 Found and fixed two paired bugs that made the same student's TERM GRADE differ

@@ -56,6 +56,7 @@ When a guide says *"reference implementation,"* it means the file at that path i
 | 09 | Final grading + master sheets (term columns) | [`09-final-grading-mastersheets.md`](09-final-grading-mastersheets.md) | ✅ written |
 | 10 | Report cards / SF9 (term layout) | [`10-report-cards-sf9.md`](10-report-cards-sf9.md) | ✅ written |
 | 11 | SF10 Permanent Record (term layout — SHS + JHS) | [`11-sf10-permanent-record.md`](11-sf10-permanent-record.md) | ✅ written |
+| 12 | Static → Dynamic ECR Conversion (per-class convert/revert button) | [`12-static-to-dynamic-ecr-conversion.md`](12-static-to-dynamic-ecr-conversion.md) | 📝 spec (to-build) |
 | P1 | **Portal surface: Principal Section Info** (term-aware schedules) | [`P1-principal-section-info.md`](P1-principal-section-info.md) | ✅ written |
 | P3 | **SHS Cluster Plotting** (cluster term conversion) | [`P3-shs-cluster-plotting-term.md`](P3-shs-cluster-plotting-term.md) | ✅ written |
 | P4 | **SHS Subject Picking** (term-aware individual picking) | [`P4-shs-subject-picking.md`](P4-shs-subject-picking.md) | ✅ written |

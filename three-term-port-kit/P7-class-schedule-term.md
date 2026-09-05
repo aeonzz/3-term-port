@@ -513,6 +513,49 @@ When `.view_classrecord` is clicked (opening the modal for a schedule row):
 7. The strand picker is shown if the subject has multiple strands (SHS only,
    non-cluster).
 
+**`load_ecr()` itself — the function that actually fetches the class record
+into `#ecr_view_holder`:**
+
+```javascript
+function load_ecr() {
+    $.ajax({
+        url: is_ibed_ecr ? '/ibed-ecr/view' : ecr_endpoint('view'),
+        type: 'GET',
+        // Re-fetched with identical params right after a submit, and must
+        // never be allowed to reflect a cached pre-submit response.
+        cache: false,
+        data: {
+            semid: $('#filter_sem').val(),
+            syid: $('#filter_sy').val(),
+            quarter: $('#filter_quarter').val(),
+            levelid: temp_sched[0].levelid,
+            subjid: temp_sched[0].subjid,
+            sectionid: temp_sched[0].sectionid,
+            clusterplotid: selected_clusterplotid,
+            ecrformat: $('#ecr_format').val(),
+            // This modal is a preview/download surface, not the teacher's own
+            // grading page — it must not expose live Save/Submit editing. The
+            // actual grading interface is System Grading or the ECR Excel
+            // upload/download flow, not this Class Record popup.
+            readonly: 1
+        },
+        success: function(data) { /* ... renders into #ecr_view_holder ... */ }
+    })
+}
+```
+
+`readonly: 1` is the important part — without it, `IBEDECRController::view()`
+defaults `$readOnly` to `false` and the dynamic component-ECR partial
+(`ibed_gradeview.blade.php`) renders its full editable form: live score
+inputs and the in-table "Save Grades" / "Submit Grades" buttons, inside what
+is supposed to be a read-only preview. The partial's own `$readOnly &&
+$gradesId` branch already renders correctly (Select All/Deselect All only,
+no Save/Submit) — the bug is purely a missing request parameter, easy to
+port past unnoticed because `load_ecr()`'s full body is otherwise assumed
+"already correct" and not spelled out like `load_ecr_meta()`'s is below.
+Legacy (non-component) ECR classes are unaffected — the legacy view has no
+live-editing controls to begin with.
+
 ### Change 10 — Blade: ECR meta display (`load_ecr_meta`)
 
 **File:** `resources/views/superadmin/pages/teacher/teacherinformation.blade.php`
@@ -850,6 +893,20 @@ branching per item.
     fallback" bug shape has hit this port, so check for it by default on any
     query in this method that touches `subject_plot`.
 
+17. **`load_ecr()` needs `readonly: 1`, not just `cache: false`.** Porting
+    note #13 above covers `cache: false`; the separate `readonly: 1` param is
+    easy to miss because, unlike `load_ecr_meta()`, this doc never spells out
+    `load_ecr()`'s full body elsewhere — see the code block under Change 9.
+    Without it, `IBEDECRController::view()` defaults `$readOnly` to `false`
+    and the component-ECR partial renders its own live score inputs plus
+    in-table "Save Grades" / "Submit Grades" buttons inside what is meant to
+    be a read-only Class Record preview — this modal is not the teacher's
+    actual grading page (that's System Grading, or the Excel upload/download
+    flow). The partial's own `$readOnly && $gradesId` branch (Select
+    All/Deselect All only, no Save/Submit) already handles this correctly
+    once the flag is actually passed. Legacy (non-component) ECR is
+    unaffected — it has no live-editing controls to begin with.
+
 ---
 
 ## Verification
@@ -894,10 +951,17 @@ branching per item.
    - Subject label shows "Component-based ECR" badge.
    - Period picker shows term labels (e.g., "1T", "2T", "3T").
    - Filter loads the component table via `/ibed-ecr/view`.
+   - The loaded table itself has **no** live score inputs and **no**
+     in-table "Save Grades" / "Submit Grades" buttons — only "Select All" /
+     "Deselect All" (this modal is a read-only preview; see porting note #17
+     on `load_ecr()`'s `readonly` param). The **sidebar's** own `#ecr_submit`
+     button (Change 11) is the only submit control left in this view — it is
+     what the two bullets below are testing, not anything inside the loaded
+     table.
    - Sidebar shows Grade Status, Last date Uploaded, Grade Submitted
      (from `/ibed-ecr/view?meta_only=1`).
-   - Submit routes through `/gradesSubmit/{quarter}` (GET).
-   - Submit button is disabled until at least one student checkbox is checked.
+   - Sidebar Submit routes through `/gradesSubmit/{quarter}` (GET).
+   - Sidebar Submit button is disabled until at least one student checkbox is checked.
    - Ungraded students trigger a warning count in the submit confirmation.
    - After submit, sidebar status updates (re-fetches meta).
    - Download opens `/ibed-ecr/download`.

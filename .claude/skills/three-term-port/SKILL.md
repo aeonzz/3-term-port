@@ -330,7 +330,8 @@ When the user names a kit number (arg to `/three-term-port`, or phrases like
    "class schedule" / "teacher ECR" → P7, "teacher final grades" / "final grades" → P8,
    "system grading" → P9, "grade summary" / "teacher grade summary" → P10,
    "pending grades" / "teacher pending grades" → P11,
-   "grade status" / "badge status" → P12, "SF10" / "permanent record" / "form 137" → 11). If the id is out of range (not 01–11 or P1–P12), say so
+   "grade status" / "badge status" → P12, "SF10" / "permanent record" / "form 137" → 11,
+   "convert ecr" / "static to dynamic" / "convert to dynamic ecr" → 12). If the id is out of range (not 01–12 or P1–P12), say so
    and show the table.
 2. **Check its `Depends on` prerequisites are actually in place** before editing —
    don't assume. At minimum verify the schema (01) exists and, for consumer modules
